@@ -1,0 +1,18 @@
+[Unit]
+Description=EduSignage Pi - Motor de Planificación Horaria Independiente
+After=edusignage-player.service
+Requires=edusignage-player.service
+
+[Service]
+Type=simple
+User=edusignage
+Group=edusignage
+WorkingDirectory=/opt/edusignage/app
+Environment=EDUSIGNAGE_DB=/opt/edusignage/data/edusignage.db
+Environment=EDUSIGNAGE_PLAYER_SOCK=/run/edusignage/player.sock
+ExecStart=/opt/edusignage/venv/bin/python /opt/edusignage/app/scheduler.py
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

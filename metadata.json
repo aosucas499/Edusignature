@@ -1,0 +1,6 @@
+{
+  "name": "EduSignage Pi",
+  "description": "Plataforma autohospedada de cartelería digital y gestión remota para Raspberry Pi OS.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

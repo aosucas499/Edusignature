@@ -1,0 +1,17 @@
+[Unit]
+Description=EduSignage Pi - Helper Privilegiado de Control OS (Whitelist)
+Before=edusignage-web.service
+
+[Service]
+Type=simple
+User=root
+Group=edusignage
+WorkingDirectory=/opt/edusignage/app
+RuntimeDirectory=edusignage
+RuntimeDirectoryMode=0770
+ExecStart=/opt/edusignage/venv/bin/python /opt/edusignage/app/system_helper.py
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

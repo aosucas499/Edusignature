@@ -84,22 +84,15 @@ Para garantizar que el panel de administración siga siempre accesible aunque un
 
 ## Instalación en Raspberry Pi mediante `git clone`
 
-Conéctate por SSH o teclado local a tu Raspberry Pi con Raspberry Pi OS Lite recién instalado y ejecuta:
+Conéctate por SSH o teclado local a tu Raspberry Pi con Raspberry Pi OS Lite y ejecuta únicamente estos 3 comandos:
 
 ```bash
-# 1. Instalar git si aún no está presente
-sudo apt-get update && sudo apt-get install -y git
-
-# 2. Clonar el repositorio en /opt/edusignage/repo
-sudo mkdir -p /opt/edusignage
-sudo git clone https://github.com/TU-USUARIO/edusignage-pi.git /opt/edusignage/repo
-
-# 3. Entrar y lanzar el instalador automático
-cd /opt/edusignage/repo
-sudo bash install.sh
+git clone https://github.com/TU-USUARIO/edusignage-pi.git
+cd edusignage-pi
+sudo ./install.sh
 ```
 
-> Sustituye `TU-USUARIO/edusignage-pi` por la URL real de tu repositorio en GitHub.
+> Sustituye `TU-USUARIO/edusignage-pi` por la URL de tu repositorio en GitHub. Si tu Raspberry Pi OS no trajera `git` preinstalado, instálalo antes con `sudo apt update && sudo apt install -y git`.
 
 ### Qué realiza `install.sh` automáticamente
 1. Detecta la arquitectura (`armv7l` / `aarch64`) y versión de Raspberry Pi OS.
@@ -118,11 +111,11 @@ Al finalizar, el instalador mostrará la IP local y la URL de acceso desde cualq
 
 ## Actualización desde GitHub (`git pull`)
 
-Para actualizar tu Raspberry Pi a la última versión publicada en GitHub sin perder tu base de datos SQLite ni tus archivos multimedia:
+Para actualizar tu Raspberry Pi a la última versión publicada en GitHub sin perder tu base de datos SQLite ni tus archivos multimedia, entra en la carpeta clonada y ejecuta:
 
 ```bash
-cd /opt/edusignage/repo
-sudo bash update.sh
+cd edusignage-pi
+sudo ./update.sh
 ```
 
 El script `update.sh` realiza automáticamente una copia preventiva de `edusignage.db` en `/opt/edusignage/backups/`, descarga los cambios mediante `git pull --ff-only`, recompila la interfaz web si es necesario, actualiza el código FastAPI/daemons y reinicia los servicios `systemd`.
@@ -132,8 +125,8 @@ El script `update.sh` realiza automáticamente una copia preventiva de `edusigna
 ## Desinstalación
 
 ```bash
-cd /opt/edusignage/repo
-sudo bash uninstall.sh
+cd edusignage-pi
+sudo ./uninstall.sh
 ```
 
 Te preguntará si deseas conservar tus horarios y archivos multimedia en `/opt/edusignage` o eliminar todo por completo.

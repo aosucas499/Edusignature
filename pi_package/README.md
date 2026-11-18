@@ -4,11 +4,11 @@ Optimizado específicamente para **Raspberry Pi 3 Model B** (1 GB RAM, ARM Corte
 
 ## Instalación en Raspberry Pi OS Lite
 
-1. Descarga y descomprime el paquete en tu Raspberry Pi:
+1. Clona el repositorio en tu Raspberry Pi y ejecuta el instalador:
    ```bash
-   tar -xzf edusignage-pi-bundle.tar.gz -C /tmp/edusignage-pkg
-   cd /tmp/edusignage-pkg
-   sudo bash install.sh
+   git clone https://github.com/TU-USUARIO/edusignage-pi.git
+   cd edusignage-pi
+   sudo ./install.sh
    ```
 
 2. Accede desde cualquier navegador de la red local:

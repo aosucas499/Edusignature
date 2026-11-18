@@ -168,14 +168,13 @@ export const DeployBackupView: React.FC<DeployBackupViewProps> = ({
             Opción recomendada tras subir el repositorio a GitHub (<span className="font-mono">git clone</span> y actualizaciones con <span className="font-mono">update.sh</span>), o bien mediante el archivo <span className="font-mono">edusignage-pi-bundle.tar.gz</span>:
           </p>
           <pre className="mt-2 p-3 rounded-lg bg-slate-950 text-slate-100 font-mono text-[11px] overflow-x-auto">
-{`# Instalación limpia en Raspberry Pi OS Lite mediante git clone:
-sudo apt-get update && sudo apt-get install -y git
-sudo mkdir -p /opt/edusignage
-sudo git clone https://github.com/TU-USUARIO/edusignage-pi.git /opt/edusignage/repo
-cd /opt/edusignage/repo && sudo bash install.sh
+{`# Instalación limpia en Raspberry Pi OS Lite:
+git clone https://github.com/TU-USUARIO/edusignage-pi.git
+cd edusignage-pi
+sudo ./install.sh
 
 # Actualizar en el futuro conservando SQLite y archivos multimedia:
-cd /opt/edusignage/repo && sudo bash update.sh
+sudo ./update.sh
 
 # Verificar servicios, memoria y temperatura RPi 3B:
 systemctl status edusignage-web edusignage-scheduler edusignage-player edusignage-system-helper

@@ -67,6 +67,7 @@ if [[ "$REPO_ROOT" != "${INSTALL_DIR}/repo" ]]; then
   rm -rf "${INSTALL_DIR}/repo"
   cp -a "$REPO_ROOT" "${INSTALL_DIR}/repo"
 fi
+git config --system --add safe.directory "${INSTALL_DIR}/repo" 2>/dev/null || true
 
 cp -r "${INSTALL_DIR}/repo/pi_package/app/"* "${INSTALL_DIR}/app/"
 

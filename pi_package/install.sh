@@ -5,9 +5,16 @@ set -euo pipefail
 # Optimizado para Raspberry Pi 3 Model B (1 GB RAM, ARM Cortex-A53, VideoCore IV)
 
 if [[ $EUID -ne 0 ]]; then
-  echo "ERROR: Ejecuta este instalador con sudo: sudo bash install.sh"
+  echo "ERROR: Ejecuta este instalador con sudo: sudo ./install.sh"
   exit 1
 fi
+
+BUILD_WEB=false
+for arg in "$@"; do
+  if [[ "$arg" == "--build-web" ]]; then
+    BUILD_WEB=true
+  fi
+done
 
 ARCH="$(uname -m)"
 echo "==> Arquitectura detectada: ${ARCH}"
@@ -31,10 +38,18 @@ echo "==> Actualizando índices APT e instalando dependencias base y X11/Openbox
 apt-get update -y
 DEBIAN_FRONTEND=noninteractive apt-get install -y \
   git curl ca-certificates \
-  python3 python3-venv python3-pip sqlite3 \
+  python3 python3-venv python3-pip python3-psutil python3-dev sqlite3 \
   xserver-xorg xinit openbox unclutter x11-xserver-utils \
-  feh mpv chromium \
-  avahi-daemon dphys-swapfile network-manager
+  feh mpv avahi-daemon network-manager
+
+# Navegador Chromium (nombre de paquete varía entre Bookworm/Trixie y Bullseye)
+DEBIAN_FRONTEND=noninteractive apt-get install -y chromium || \
+  DEBIAN_FRONTEND=noninteractive apt-get install -y chromium-browser || true
+
+# dphys-swapfile opcional (algunas versiones recientes usan rpi-swap/zram)
+if apt-cache show dphys-swapfile >/dev/null 2>&1; then
+  DEBIAN_FRONTEND=noninteractive apt-get install -y dphys-swapfile || true
+fi
 
 read -r -p "¿Instalar Firefox ESR y RetroArch como reproductores adicionales? [s/N]: " OPT_EXTRA
 if [[ "${OPT_EXTRA,,}" == "s" || "${OPT_EXTRA,,}" == "y" ]]; then
@@ -44,7 +59,7 @@ fi
 read -r -p "¿Configurar Samba para compartir /opt/edusignage/media en red local? [S/n]: " OPT_SAMBA
 OPT_SAMBA="${OPT_SAMBA:-S}"
 if [[ "${OPT_SAMBA,,}" == "s" || "${OPT_SAMBA,,}" == "y" ]]; then
-  DEBIAN_FRONTEND=noninteractive apt-get install -y samba
+  DEBIAN_FRONTEND=noninteractive apt-get install -y samba || true
 fi
 
 echo "==> Creando usuario de servicio sin privilegios 'edusignage'..."
@@ -72,30 +87,37 @@ git config --system --add safe.directory "${INSTALL_DIR}/repo" 2>/dev/null || tr
 cp -r "${INSTALL_DIR}/repo/pi_package/app/"* "${INSTALL_DIR}/app/"
 
 echo "==> Configurando entorno virtual Python..."
-python3 -m venv "${INSTALL_DIR}/venv"
-"${INSTALL_DIR}/venv/bin/pip" install --upgrade pip
+python3 -m venv --system-site-packages "${INSTALL_DIR}/venv"
+"${INSTALL_DIR}/venv/bin/pip" install --upgrade pip || true
 "${INSTALL_DIR}/venv/bin/pip" install -r "${INSTALL_DIR}/repo/pi_package/requirements.txt"
 
-echo "==> Compilando interfaz web administrativa..."
-if ! command -v npm >/dev/null 2>&1; then
-  DEBIAN_FRONTEND=noninteractive apt-get install -y nodejs npm || true
-fi
-
-if command -v npm >/dev/null 2>&1 && [[ -f "${INSTALL_DIR}/repo/package.json" ]]; then
-  pushd "${INSTALL_DIR}/repo" >/dev/null
-  NODE_OPTIONS="--max-old-space-size=512" npm install --no-audit --no-fund
-  NODE_OPTIONS="--max-old-space-size=512" npm run build
-  cp -r dist/* "${INSTALL_DIR}/web/"
-  popd >/dev/null
-elif [[ -d "${INSTALL_DIR}/repo/dist" ]]; then
-  cp -r "${INSTALL_DIR}/repo/dist/"* "${INSTALL_DIR}/web/"
+echo "==> Instalando interfaz web administrativa..."
+if [[ "$BUILD_WEB" == "true" || ! -f "${INSTALL_DIR}/repo/pi_package/web/index.html" ]]; then
+  echo "==> Compilando interfaz web desde código fuente..."
+  if ! command -v npm >/dev/null 2>&1; then
+    DEBIAN_FRONTEND=noninteractive apt-get install -y nodejs npm || true
+  fi
+  if command -v npm >/dev/null 2>&1 && [[ -f "${INSTALL_DIR}/repo/package.json" ]]; then
+    pushd "${INSTALL_DIR}/repo" >/dev/null
+    NODE_OPTIONS="--max-old-space-size=512" npm install --legacy-peer-deps --no-audit --no-fund
+    NODE_OPTIONS="--max-old-space-size=512" npm run build
+    rm -rf "${INSTALL_DIR}/web/"*
+    cp -r dist/* "${INSTALL_DIR}/web/"
+    popd >/dev/null
+  else
+    echo "ERROR: No se encontró pi_package/web ni npm para compilar el panel web."
+    exit 1
+  fi
 else
-  echo "ADVERTENCIA: No se pudo compilar el frontend web (npm no disponible y sin carpeta dist/)."
+  rm -rf "${INSTALL_DIR}/web/"*
+  cp -r "${INSTALL_DIR}/repo/pi_package/web/"* "${INSTALL_DIR}/web/"
 fi
 
 echo "==> Copiando recursos gráficos iniciales a ${INSTALL_DIR}/media/images..."
 if [[ -d "${INSTALL_DIR}/repo/src/assets/images" ]]; then
-  cp -n "${INSTALL_DIR}/repo/src/assets/images/"*.jpg "${INSTALL_DIR}/media/images/" 2>/dev/null || true
+  cp -n "${INSTALL_DIR}/repo/src/assets/images/"edusignage_campus_banner_*.jpg "${INSTALL_DIR}/media/images/campus_atrio.jpg" 2>/dev/null || true
+  cp -n "${INSTALL_DIR}/repo/src/assets/images/"edusignage_robotics_slide_*.jpg "${INSTALL_DIR}/media/images/taller_robotica.jpg" 2>/dev/null || true
+  cp -n "${INSTALL_DIR}/repo/src/assets/images/"edusignage_school_crest_*.jpg "${INSTALL_DIR}/media/images/escudo_centro.jpg" 2>/dev/null || true
 fi
 
 echo "==> Configurando X11 + Openbox sin escritorio..."
@@ -108,7 +130,7 @@ if [[ "${OPT_SAMBA,,}" == "s" || "${OPT_SAMBA,,}" == "y" ]]; then
     if ! grep -q "\[EduSignage-Media\]" /etc/samba/smb.conf; then
       cat "${PKG_DIR}/samba/smb.conf.snippet" >> /etc/samba/smb.conf
     fi
-    systemctl enable --now smbd
+    systemctl enable --now smbd || true
   fi
 fi
 
@@ -133,9 +155,9 @@ systemctl enable --now edusignage-web.service
 LOCAL_IP="$(hostname -I | awk '{print $1}')"
 echo ""
 echo "================================================================="
-echo " EduSignage Pi instalado correctamente desde Git"
+echo " EduSignage Pi instalado correctamente"
 echo " Acceso local: http://${LOCAL_IP:-127.0.0.1}:8080"
 echo " Acceso mDNS : http://$(hostname).local:8080"
 echo " Respaldo pre-instalación: ${BACKUP_DIR}"
-echo " Para actualizar en el futuro: cd ${INSTALL_DIR}/repo && sudo bash update.sh"
+echo " Para actualizar en el futuro: sudo ./update.sh"
 echo "================================================================="

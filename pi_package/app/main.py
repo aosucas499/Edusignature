@@ -783,7 +783,25 @@ async def websocket_endpoint(ws: WebSocket):
         pass
 
 
-# Servir frontend SPA compilado en /opt/edusignage/web (construido durante install.sh)
+@app.get("/api/package/files")
+async def list_package_files(_user: str = Depends(require_auth)):
+    pkg_dir = "/opt/edusignage/repo/pi_package"
+    out = []
+    if os.path.exists(pkg_dir):
+        for root, dirs, files in os.walk(pkg_dir):
+            dirs[:] = [d for d in dirs if d not in ("web", "__pycache__")]
+            for fname in sorted(files):
+                full = os.path.join(root, fname)
+                rel = os.path.relpath(full, pkg_dir).replace("\\", "/")
+                try:
+                    content = open(full, "r", encoding="utf-8").read()
+                    out.append({"path": rel, "sizeBytes": os.path.getsize(full), "content": content})
+                except Exception:
+                    pass
+    return out
+
+
+# Servir frontend SPA compilado en /opt/edusignage/web (instalado desde pi_package/web)
 if os.path.exists(WEB_DIST_DIR):
     assets_dir = os.path.join(WEB_DIST_DIR, "assets")
     if os.path.exists(assets_dir):

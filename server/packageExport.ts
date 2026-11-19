@@ -12,6 +12,7 @@ function walkFiles(dir: string, base: string, out: PackageFileEntry[]): void {
     const full = path.join(dir, entry.name);
     const rel = path.relative(base, full).replace(/\\/g, '/');
     if (entry.isDirectory()) {
+      if (rel === 'web' || rel === '__pycache__') continue;
       walkFiles(full, base, out);
     } else {
       const stat = fs.statSync(full);

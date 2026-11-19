@@ -96,10 +96,10 @@ sudo ./install.sh
 
 ### Qué realiza `install.sh` automáticamente
 1. Detecta la arquitectura (`armv7l` / `aarch64`) y versión de Raspberry Pi OS.
-2. Instala las dependencias ligeras necesarias (`xserver-xorg`, `openbox`, `unclutter`, `feh`, `mpv`, `chromium`, `python3-venv`, `sqlite3`, `avahi-daemon`, `dphys-swapfile` y opcionalmente `firefox-esr`, `retroarch` y `samba`).
+2. Instala únicamente las dependencias ligeras necesarias (`xserver-xorg`, `openbox`, `unclutter`, `feh`, `mpv`, `chromium`, `python3-venv`, `sqlite3`, `avahi-daemon` y opcionalmente `firefox-esr`, `retroarch` y `samba`).
 3. Crea el usuario de servicio sin privilegios `edusignage` y la estructura `/opt/edusignage/{app,web,data,media,backups,logs}`.
-4. Configura **1024 MB de Swap** antes de compilar la interfaz web para garantizar estabilidad en Raspberry Pi 3B de 1 GB de RAM.
-5. Compila el panel web React, prepara el entorno virtual Python e instala los 5 servicios `systemd` con arranque automático directo en pantalla.
+4. Configura **1024 MB de Swap** para garantizar estabilidad en Raspberry Pi 3B de 1 GB de RAM.
+5. Despliega la interfaz web precompilada (sin necesidad de instalar Node.js ni compilar paquetes `npm` en la Raspberry Pi), prepara el entorno virtual Python e instala los 5 servicios `systemd` con arranque automático directo en pantalla (si modificas `src/`, puedes recompilar con `sudo ./install.sh --build-web`).
 6. Crea copias de seguridad de `/etc/dphys-swapfile` y `/etc/samba/smb.conf` antes de modificarlos.
 
 ### Acceso tras la instalación

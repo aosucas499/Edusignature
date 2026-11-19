@@ -10,4 +10,4 @@ if [[ $EUID -ne 0 ]]; then
 fi
 
 export EDUSIGNAGE_REPO_ROOT="$SCRIPT_DIR"
-exec bash "${SCRIPT_DIR}/pi_package/install.sh"
+exec bash "${SCRIPT_DIR}/pi_package/install.sh" "$@"

@@ -25,6 +25,9 @@ PLAYER_SOCKET = os.environ.get("EDUSIGNAGE_PLAYER_SOCK", "/run/edusignage/player
 STATE_FILE = "/run/edusignage/player_state.json"
 DB_PATH = os.environ.get("EDUSIGNAGE_DB", "/opt/edusignage/data/edusignage.db")
 DISPLAY = os.environ.get("DISPLAY", ":0")
+XAUTHORITY = os.environ.get("XAUTHORITY", "/opt/edusignage/.Xauthority")
+XDG_RUNTIME_DIR = os.environ.get("XDG_RUNTIME_DIR", "/run/edusignage/xdg")
+CHILD_LOG_FILE = "/opt/edusignage/logs/player_child.log"
 
 
 class ExclusivePlayer:
@@ -35,18 +38,35 @@ class ExclusivePlayer:
         self.lock = asyncio.Lock()
 
     def _env(self) -> dict:
+        os.makedirs(XDG_RUNTIME_DIR, mode=0o700, exist_ok=True)
         env = os.environ.copy()
+        env["HOME"] = "/opt/edusignage"
         env["DISPLAY"] = DISPLAY
+        env["XDG_RUNTIME_DIR"] = XDG_RUNTIME_DIR
+        if os.path.exists(XAUTHORITY):
+            env["XAUTHORITY"] = XAUTHORITY
         return env
 
+    async def _wait_for_x11(self, timeout_sec: float = 20.0) -> bool:
+        display_num = DISPLAY.lstrip(":").split(".")[0] or "0"
+        x11_sock = f"/tmp/.X11-unix/X{display_num}"
+        deadline = time.time() + timeout_sec
+        while time.time() < deadline:
+            if os.path.exists(x11_sock):
+                return True
+            await asyncio.sleep(0.5)
+        logger.error("Servidor X11 no disponible en %s tras %.1fs", x11_sock, timeout_sec)
+        return False
+
     def _disable_screensaver(self) -> None:
+        env = self._env()
         for cmd in (
             ["xset", "-display", DISPLAY, "s", "off"],
             ["xset", "-display", DISPLAY, "-dpms"],
             ["xset", "-display", DISPLAY, "s", "noblank"],
         ):
             if shutil.which("xset"):
-                subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                subprocess.run(cmd, env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
     def _stop_current(self) -> None:
         if self.proc and self.proc.poll() is None:
@@ -60,8 +80,7 @@ class ExclusivePlayer:
                 except Exception:
                     pass
         self.proc = None
-        # Liberar RAM residual en RPi 3B asegurando que no queden procesos Chromium huérfanos
-        for browser in ("chromium-browser", "chromium", "firefox", "firefox-esr", "feh", "mpv"):
+        for browser in ("chromium-browser", "chromium", "firefox", "firefox-esr", "feh", "mpv", "retroarch", "soffice.bin"):
             if self.current_item and self.current_item.get("content_type") != "app":
                 subprocess.run(["pkill", "-f", browser], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
@@ -76,6 +95,21 @@ class ExclusivePlayer:
             return dict(row) if row else None
         finally:
             conn.close()
+
+    def _chromium_base_flags(self) -> list[str]:
+        profile_dir = "/opt/edusignage/data/chromium-profile"
+        os.makedirs(profile_dir, exist_ok=True)
+        return [
+            "--kiosk",
+            "--noerrdialogs",
+            "--disable-infobars",
+            "--no-first-run",
+            "--password-store=basic",
+            "--disable-gpu-sandbox",
+            "--check-for-update-interval=31536000",
+            f"--user-data-dir={profile_dir}",
+            "--disable-dev-shm-usage",
+        ]
 
     def _build_command(self, item: dict) -> list[str]:
         ctype = item.get("content_type", "standby")
@@ -93,27 +127,18 @@ class ExclusivePlayer:
                 raise RuntimeError(f"Navegador no instalado: {browser_pref}")
             if "firefox" in binary:
                 return [binary, "--kiosk", target]
-            zoom = float(cfg.get("zoom", 1.0))
-            return [
-                binary,
-                "--kiosk",
-                "--noerrdialogs",
-                "--disable-infobars",
-                "--no-first-run",
-                "--check-for-update-interval=31536000",
-                f"--force-device-scale-factor={zoom}",
-                "--disable-dev-shm-usage",
-                target,
-            ]
+            zoom = float(cfg.get("zoom", 100))
+            scale = zoom / 100.0 if zoom > 10 else zoom
+            return [binary, *self._chromium_base_flags(), f"--force-device-scale-factor={scale}", target]
 
         if ctype == "images":
             feh = shutil.which("feh")
             if not feh:
                 raise RuntimeError("feh no está instalado")
             media_dir = target if os.path.isabs(target) else os.path.join("/opt/edusignage/media", target)
-            delay = str(int(cfg.get("interval_sec", 8)))
+            delay = str(int(cfg.get("interval_sec", cfg.get("intervalSec", 8))))
             cmd = [feh, "--fullscreen", "--auto-zoom", "--hide-pointer", "--slideshow-delay", delay]
-            if cfg.get("random_order"):
+            if cfg.get("random_order") or cfg.get("randomOrder"):
                 cmd.append("--randomize")
             if cfg.get("recursive"):
                 cmd.append("--recursive")
@@ -126,7 +151,7 @@ class ExclusivePlayer:
                 raise RuntimeError("mpv no está instalado")
             media_path = target if os.path.isabs(target) else os.path.join("/opt/edusignage/media", target)
             vol = str(int(cfg.get("volume", 80)))
-            cmd = [
+            return [
                 mpv,
                 "--fs",
                 "--no-osd-bar",
@@ -135,7 +160,6 @@ class ExclusivePlayer:
                 f"--volume={vol}",
                 media_path,
             ]
-            return cmd
 
         if ctype == "app":
             app = self._lookup_authorized_app(target)
@@ -147,18 +171,10 @@ class ExclusivePlayer:
             args = [a for a in app["args"].split(" ") if a.strip()]
             return [binary, *args]
 
-        # Pantalla de espera servida localmente en Chromium ligero hacia /standby
         chromium = shutil.which("chromium-browser") or shutil.which("chromium")
         if chromium:
             port = os.environ.get("EDUSIGNAGE_WEB_PORT", "8080")
-            return [
-                chromium,
-                "--kiosk",
-                "--app=http://127.0.0.1:" + port + "/standby",
-                "--noerrdialogs",
-                "--disable-infobars",
-                "--disable-dev-shm-usage",
-            ]
+            return [chromium, *self._chromium_base_flags(), f"--app=http://127.0.0.1:{port}/standby"]
         raise RuntimeError("No hay reproductor disponible para pantalla de espera")
 
     def _write_state(self, status: str, error: str = "") -> None:
@@ -174,22 +190,51 @@ class ExclusivePlayer:
         with open(STATE_FILE, "w", encoding="utf-8") as fh:
             json.dump(payload, fh)
 
+    def _spawn_process(self, cmd: list[str]) -> subprocess.Popen:
+        os.makedirs(os.path.dirname(CHILD_LOG_FILE), exist_ok=True)
+        log_fh = open(CHILD_LOG_FILE, "ab")
+        log_fh.write(f"\n--- [{time.strftime('%Y-%m-%d %H:%M:%S')}] EXEC: {' '.join(cmd)} ---\n".encode("utf-8"))
+        log_fh.flush()
+        proc = subprocess.Popen(
+            cmd,
+            env=self._env(),
+            preexec_fn=os.setsid,
+            stdout=log_fh,
+            stderr=subprocess.STDOUT,
+        )
+        log_fh.close()
+        return proc
+
+    def _tail_child_log(self, lines: int = 12) -> str:
+        try:
+            with open(CHILD_LOG_FILE, "r", encoding="utf-8", errors="ignore") as fh:
+                return "".join(fh.readlines()[-lines:]).strip()
+        except Exception:
+            return ""
+
     async def play(self, item: dict) -> dict:
         async with self.lock:
             self._stop_current()
+            if not await self._wait_for_x11():
+                err = "Servidor gráfico X11 (:0) no está disponible."
+                self._write_state("error", err)
+                return {"ok": False, "error": err}
+
             self._disable_screensaver()
             self.current_item = item
             try:
                 cmd = self._build_command(item)
-                logger.info("Lanzando exclusivo: %s", " ".join(cmd))
-                self.proc = subprocess.Popen(
-                    cmd,
-                    env=self._env(),
-                    preexec_fn=os.setsid,
-                    stdout=subprocess.DEVNULL,
-                    stderr=subprocess.PIPE,
-                )
+                logger.info("Lanzando exclusivo en %s: %s", DISPLAY, " ".join(cmd))
+                self.proc = self._spawn_process(cmd)
                 self.started_at = time.time()
+                await asyncio.sleep(1.2)
+                if self.proc.poll() is not None:
+                    code = self.proc.returncode
+                    tail = self._tail_child_log()
+                    err = f"El proceso terminó inmediatamente (código {code}). {tail}"
+                    logger.error(err)
+                    self._write_state("error", err)
+                    return {"ok": False, "error": err}
                 self._write_state("playing")
                 return {"ok": True, "pid": self.proc.pid}
             except Exception as exc:
@@ -215,7 +260,7 @@ class ExclusivePlayer:
                     self.proc = None
                     try:
                         cmd = self._build_command(item)
-                        self.proc = subprocess.Popen(cmd, env=self._env(), preexec_fn=os.setsid)
+                        self.proc = self._spawn_process(cmd)
                         self.started_at = time.time()
                         self._write_state("recovered")
                     except Exception as exc:
@@ -251,7 +296,7 @@ async def main() -> None:
         os.remove(PLAYER_SOCKET)
     server = await asyncio.start_unix_server(handle_client, path=PLAYER_SOCKET)
     os.chmod(PLAYER_SOCKET, 0o660)
-    logger.info("Reproductor escuchando en %s", PLAYER_SOCKET)
+    logger.info("Reproductor escuchando en %s (DISPLAY=%s)", PLAYER_SOCKET, DISPLAY)
     await asyncio.gather(server.serve_forever(), player.watchdog_loop())
 
 

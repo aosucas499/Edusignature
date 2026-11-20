@@ -133,7 +133,7 @@ async def init_db() -> None:
                 ("Reproductor MPV Local", "/usr/bin/mpv", "--fs --no-osd-bar --hwdec=auto-safe", "fullscreen", 45, "standby", 1, "low", 1, "Reproducción de vídeo local H.264/MP4"),
                 ("Chromium Kiosco", "/usr/bin/chromium-browser", "--kiosk --noerrdialogs --disable-infobars --disable-dev-shm-usage", "fullscreen", 120, "standby", 1, "high", 1, "Navegador web kiosco (se cierra al cambiar)"),
                 ("Firefox ESR Kiosco", "/usr/bin/firefox-esr", "--kiosk", "fullscreen", 90, "standby", 0, "high", 1, "Alternativa opcional; requiere swap >= 1024 MB"),
-                ("LibreOffice Impress", "/usr/bin/libreoffice", "--show --norestore", "fullscreen", 30, "standby", 1, "medium", 1, "Presentaciones ODP/PPTX locales"),
+                ("LibreOffice Impress", "/usr/bin/libreoffice", "--impress --norestore", "fullscreen", 30, "standby", 1, "medium", 1, "Presentaciones ODP/PPTX locales (añade ruta .odp --show si deseas reproducción directa)"),
             ]
             await db.executemany(
                 """

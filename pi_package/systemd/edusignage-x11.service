@@ -1,6 +1,7 @@
 [Unit]
 Description=EduSignage Pi - Sesión Ligera X11 + Openbox (Sin escritorio)
-After=systemd-user-sessions.service
+Conflicts=getty@tty1.service lightdm.service display-manager.service
+After=systemd-user-sessions.service edusignage-system-helper.service
 
 [Service]
 Type=simple
@@ -10,7 +11,17 @@ PAMName=login
 TTYPath=/dev/tty1
 StandardInput=tty
 StandardOutput=journal
-ExecStart=/usr/bin/xinit /etc/xdg/openbox/edusignage-xinitrc -- :0 vt1 -nolisten tcp
+StandardError=journal
+Environment=HOME=/opt/edusignage
+Environment=DISPLAY=:0
+Environment=XAUTHORITY=/opt/edusignage/.Xauthority
+Environment=XDG_RUNTIME_DIR=/run/edusignage/xdg
+ExecStartPre=+/bin/mkdir -p /run/edusignage/xdg
+ExecStartPre=+/bin/chown edusignage:edusignage /run/edusignage /run/edusignage/xdg
+ExecStartPre=+/bin/chmod 0770 /run/edusignage
+ExecStartPre=+/bin/chmod 0700 /run/edusignage/xdg
+ExecStartPre=+/bin/chvt 1
+ExecStart=/usr/bin/xinit /etc/xdg/openbox/edusignage-xinitrc -- /usr/bin/Xorg :0 vt1 -nolisten tcp -keeptty
 Restart=always
 RestartSec=3
 

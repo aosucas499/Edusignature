@@ -42,10 +42,35 @@ fi
 
 REPO_DIR="${INSTALL_DIR}/repo"
 
-echo "==> Deteniendo servicios web, planificador y reproductor..."
-systemctl stop edusignage-scheduler edusignage-player edusignage-web || true
+echo "==> Asegurando dependencias X11 sin escritorio (xserver-xorg-legacy, dbus-x11, kbd)..."
+DEBIAN_FRONTEND=noninteractive apt-get install -y xserver-xorg-legacy dbus-x11 kbd >/dev/null 2>&1 || true
+usermod -aG video,audio,render,tty,input edusignage 2>/dev/null || true
+
+if [[ ! -f "${INSTALL_DIR}/backups/prev_default_target.txt" ]]; then
+  systemctl get-default > "${INSTALL_DIR}/backups/prev_default_target.txt" 2>/dev/null || echo "multi-user.target" > "${INSTALL_DIR}/backups/prev_default_target.txt"
+fi
+
+for dm in lightdm gdm3 sddm xdm; do
+  if systemctl is-enabled "${dm}.service" >/dev/null 2>&1 || systemctl is-active "${dm}.service" >/dev/null 2>&1; then
+    echo "==> Deshabilitando gestor de escritorio (${dm}) para liberar HDMI..."
+    grep -qxF "$dm" "${INSTALL_DIR}/backups/prev_dm.txt" 2>/dev/null || echo "$dm" >> "${INSTALL_DIR}/backups/prev_dm.txt"
+    systemctl stop "${dm}.service" || true
+    systemctl disable "${dm}.service" || true
+  fi
+done
+systemctl set-default multi-user.target || true
+
+cat <<'EOF' > /etc/X11/Xwrapper.config
+allowed_users=anybody
+needs_root_rights=yes
+EOF
+
+echo "==> Deteniendo servicios EduSignage..."
+systemctl stop edusignage-scheduler edusignage-player edusignage-x11 edusignage-web || true
 
 cp -r "${REPO_DIR}/pi_package/app/"* "${INSTALL_DIR}/app/"
+cp "${REPO_DIR}/pi_package/openbox/autostart" /etc/xdg/openbox/edusignage-xinitrc
+chmod 0755 /etc/xdg/openbox/edusignage-xinitrc
 "${INSTALL_DIR}/venv/bin/pip" install -r "${REPO_DIR}/pi_package/requirements.txt"
 
 if [[ "$BUILD_WEB" == "true" ]] && command -v npm >/dev/null 2>&1 && [[ -f "${REPO_DIR}/package.json" ]]; then
@@ -64,8 +89,13 @@ fi
 
 cp "${REPO_DIR}/pi_package/systemd/"*.service /etc/systemd/system/
 systemctl daemon-reload
+systemctl stop getty@tty1.service || true
 chown -R edusignage:edusignage "${INSTALL_DIR}/app" "${INSTALL_DIR}/web" "${INSTALL_DIR}/repo"
 
-echo "==> Reiniciando servicios..."
-systemctl start edusignage-system-helper edusignage-player edusignage-scheduler edusignage-web
+echo "==> Reiniciando servicios y sesión X11 exclusiva en HDMI..."
+systemctl start edusignage-system-helper
+systemctl start edusignage-x11
+systemctl start edusignage-web
+systemctl start edusignage-player
+systemctl start edusignage-scheduler
 echo "==> Actualización completada correctamente."

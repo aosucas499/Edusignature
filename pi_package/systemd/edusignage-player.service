@@ -1,6 +1,6 @@
 [Unit]
 Description=EduSignage Pi - Demonio Reproductor Exclusivo X11
-After=edusignage-x11.service
+After=edusignage-x11.service edusignage-web.service
 Requires=edusignage-x11.service
 
 [Service]
@@ -8,7 +8,10 @@ Type=simple
 User=edusignage
 Group=edusignage
 WorkingDirectory=/opt/edusignage/app
+Environment=HOME=/opt/edusignage
 Environment=DISPLAY=:0
+Environment=XAUTHORITY=/opt/edusignage/.Xauthority
+Environment=XDG_RUNTIME_DIR=/run/edusignage/xdg
 Environment=EDUSIGNAGE_DB=/opt/edusignage/data/edusignage.db
 Environment=EDUSIGNAGE_PLAYER_SOCK=/run/edusignage/player.sock
 ExecStart=/opt/edusignage/venv/bin/python /opt/edusignage/app/player_daemon.py

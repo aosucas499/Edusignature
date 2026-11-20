@@ -77,7 +77,7 @@ Para garantizar que el panel de administración siga siempre accesible aunque un
 ## Requisitos en la Raspberry Pi
 
 - **Hardware recomendado**: Raspberry Pi 3 Model B (1 GB RAM) o superior (Raspberry Pi 3B+ / 4 / 5 / Zero 2 W).
-- **Sistema operativo**: **Raspberry Pi OS Lite** (32 bits `armv7l` o 64 bits `aarch64`, basado en Debian Bookworm/Bullseye).
+- **Sistema operativo**: **Raspberry Pi OS Lite o Desktop** (32 bits `armv7l` o 64 bits `aarch64`, basado en Debian Bookworm/Bullseye). En instalaciones *with Desktop*, el instalador deshabilita de forma reversible el escritorio (`lightdm`/`graphical.target`) para arrancar directamente en EduSignage sin mostrar el escritorio.
 - **Conexión**: cable Ethernet o WiFi durante la instalación inicial para descargar paquetes APT y el repositorio Git. Una vez instalado funciona sin Internet.
 
 ---
@@ -96,11 +96,12 @@ sudo ./install.sh
 
 ### Qué realiza `install.sh` automáticamente
 1. Detecta la arquitectura (`armv7l` / `aarch64`) y versión de Raspberry Pi OS.
-2. Instala únicamente las dependencias ligeras necesarias (`xserver-xorg`, `openbox`, `unclutter`, `feh`, `mpv`, `chromium`, `python3-venv`, `sqlite3`, `avahi-daemon` y opcionalmente `firefox-esr`, `retroarch` y `samba`).
-3. Crea el usuario de servicio sin privilegios `edusignage` y la estructura `/opt/edusignage/{app,web,data,media,backups,logs}`.
-4. Configura **1024 MB de Swap** para garantizar estabilidad en Raspberry Pi 3B de 1 GB de RAM.
-5. Despliega la interfaz web precompilada (sin necesidad de instalar Node.js ni compilar paquetes `npm` en la Raspberry Pi), prepara el entorno virtual Python e instala los 5 servicios `systemd` con arranque automático directo en pantalla (si modificas `src/`, puedes recompilar con `sudo ./install.sh --build-web`).
-6. Crea copias de seguridad de `/etc/dphys-swapfile` y `/etc/samba/smb.conf` antes de modificarlos.
+2. Instala únicamente las dependencias ligeras necesarias (`xserver-xorg`, `xserver-xorg-legacy`, `dbus-x11`, `kbd`, `openbox`, `unclutter`, `feh`, `mpv`, `chromium`, `python3-venv`, `sqlite3`, `avahi-daemon` y opcionalmente `firefox-esr`, `retroarch` y `samba`).
+3. Crea el usuario de servicio sin privilegios `edusignage` (con acceso a `video`, `audio`, `render`, `input`, `tty`) y la estructura `/opt/edusignage/{app,web,data,media,backups,logs}`.
+4. Configura `/etc/X11/Xwrapper.config` y desactiva de forma reversible `lightdm`/`graphical.target` (si usas Raspberry Pi OS with Desktop) para ceder la salida HDMI (`vt1`, `DISPLAY=:0`) a Openbox sin escritorio ni barra de tareas.
+5. Configura **1024 MB de Swap** para garantizar estabilidad en Raspberry Pi 3B de 1 GB de RAM.
+6. Despliega la interfaz web precompilada (sin necesidad de instalar Node.js ni compilar paquetes `npm` en la Raspberry Pi), prepara el entorno virtual Python e instala los 5 servicios `systemd` con arranque automático directo en pantalla (si modificas `src/`, puedes recompilar con `sudo ./install.sh --build-web`).
+7. Crea copias de seguridad de `/etc/dphys-swapfile` y `/etc/samba/smb.conf` antes de modificarlos.
 
 ### Acceso tras la instalación
 Al finalizar, el instalador mostrará la IP local y la URL de acceso desde cualquier navegador de la red:
@@ -141,8 +142,11 @@ Comandos útiles por SSH si necesitas comprobar el estado del sistema:
 # Estado de los servicios principales
 systemctl status edusignage-web edusignage-scheduler edusignage-player edusignage-system-helper edusignage-x11
 
-# Registros en tiempo real del planificador o reproductor
-journalctl -u edusignage-scheduler -u edusignage-player -f
+# Registros en tiempo real del servidor gráfico, planificador o reproductor
+journalctl -u edusignage-x11 -u edusignage-scheduler -u edusignage-player -f
+
+# Salida directa (stderr) del proceso gráfico hijo (Chromium, mpv, LibreOffice, RetroArch...)
+tail -n 60 /opt/edusignage/logs/player_child.log
 
 # Temperatura de CPU/GPU y uso de memoria RAM/Swap en RPi 3B
 vcgencmd measure_temp

@@ -118,6 +118,16 @@ async def main_loop():
 
     while True:
         try:
+            # Si el reproductor se reinició o perdió el proceso, forzar reenvío de la regla activa
+            state_file = "/run/edusignage/player_state.json"
+            if os.path.exists(state_file):
+                try:
+                    st = json.load(open(state_file, "r", encoding="utf-8"))
+                    if st.get("pid") is None and st.get("status") in ("error", "recovered"):
+                        last_signature = None
+                except Exception:
+                    pass
+
             override = check_manual_override()
             desired = override if override else await resolve_active_schedule()
             signature = json.dumps(

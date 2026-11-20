@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# EduSignage Pi - Instalador Automático mediante Git Clone para Raspberry Pi OS Lite (32/64-bit)
+# EduSignage Pi - Instalador Automático mediante Git Clone para Raspberry Pi OS (Lite y Desktop, 32/64-bit)
 # Optimizado para Raspberry Pi 3 Model B (1 GB RAM, ARM Cortex-A53, VideoCore IV)
 
 if [[ $EUID -ne 0 ]]; then
@@ -39,14 +39,12 @@ apt-get update -y
 DEBIAN_FRONTEND=noninteractive apt-get install -y \
   git curl ca-certificates \
   python3 python3-venv python3-pip python3-psutil python3-dev sqlite3 \
-  xserver-xorg xinit openbox unclutter x11-xserver-utils \
+  xserver-xorg xserver-xorg-legacy xinit openbox unclutter x11-xserver-utils dbus-x11 kbd \
   feh mpv avahi-daemon network-manager
 
-# Navegador Chromium (nombre de paquete varía entre Bookworm/Trixie y Bullseye)
 DEBIAN_FRONTEND=noninteractive apt-get install -y chromium || \
   DEBIAN_FRONTEND=noninteractive apt-get install -y chromium-browser || true
 
-# dphys-swapfile opcional (algunas versiones recientes usan rpi-swap/zram)
 if apt-cache show dphys-swapfile >/dev/null 2>&1; then
   DEBIAN_FRONTEND=noninteractive apt-get install -y dphys-swapfile || true
 fi
@@ -62,9 +60,11 @@ if [[ "${OPT_SAMBA,,}" == "s" || "${OPT_SAMBA,,}" == "y" ]]; then
   DEBIAN_FRONTEND=noninteractive apt-get install -y samba || true
 fi
 
-echo "==> Creando usuario de servicio sin privilegios 'edusignage'..."
+echo "==> Creando/actualizando usuario de servicio sin privilegios 'edusignage'..."
 if ! id -u edusignage >/dev/null 2>&1; then
-  useradd --system --home-dir "$INSTALL_DIR" --shell /usr/sbin/nologin --groups video,audio,render,tty edusignage
+  useradd --system --home-dir "$INSTALL_DIR" --shell /usr/sbin/nologin --groups video,audio,render,tty,input edusignage
+else
+  usermod -aG video,audio,render,tty,input edusignage || true
 fi
 
 echo "==> Creando estructura de carpetas en ${INSTALL_DIR}..."
@@ -76,6 +76,29 @@ if [[ -f /etc/dphys-swapfile ]]; then
   sed -i 's/^#*CONF_SWAPSIZE=.*/CONF_SWAPSIZE=1024/' /etc/dphys-swapfile
   systemctl restart dphys-swapfile || true
 fi
+
+echo "==> Configurando permisos X11 para arranque directo sin escritorio..."
+if [[ -f /etc/X11/Xwrapper.config ]]; then
+  cp /etc/X11/Xwrapper.config "${BACKUP_DIR}/Xwrapper.config.bak"
+fi
+cat <<'EOF' > /etc/X11/Xwrapper.config
+allowed_users=anybody
+needs_root_rights=yes
+EOF
+
+if [[ ! -f "${INSTALL_DIR}/backups/prev_default_target.txt" ]]; then
+  systemctl get-default > "${INSTALL_DIR}/backups/prev_default_target.txt" 2>/dev/null || echo "multi-user.target" > "${INSTALL_DIR}/backups/prev_default_target.txt"
+fi
+
+for dm in lightdm gdm3 sddm xdm; do
+  if systemctl is-enabled "${dm}.service" >/dev/null 2>&1 || systemctl is-active "${dm}.service" >/dev/null 2>&1; then
+    echo "==> Deshabilitando gestor de escritorio (${dm}) para arranque directo en EduSignage..."
+    echo "$dm" >> "${INSTALL_DIR}/backups/prev_dm.txt"
+    systemctl stop "${dm}.service" || true
+    systemctl disable "${dm}.service" || true
+  fi
+done
+systemctl set-default multi-user.target || true
 
 echo "==> Sincronizando código fuente desde el repositorio Git..."
 if [[ "$REPO_ROOT" != "${INSTALL_DIR}/repo" ]]; then
@@ -143,14 +166,15 @@ chown -R edusignage:edusignage "$INSTALL_DIR"
 find "${INSTALL_DIR}/media" -type d -exec chmod 0755 {} \;
 find "${INSTALL_DIR}/media" -type f -exec chmod 0644 {} \;
 
-echo "==> Instalando servicios systemd..."
+echo "==> Instalando e iniciando servicios systemd..."
 cp "${PKG_DIR}/systemd/"*.service /etc/systemd/system/
 systemctl daemon-reload
+systemctl stop getty@tty1.service || true
 systemctl enable --now edusignage-system-helper.service
 systemctl enable --now edusignage-x11.service
+systemctl enable --now edusignage-web.service
 systemctl enable --now edusignage-player.service
 systemctl enable --now edusignage-scheduler.service
-systemctl enable --now edusignage-web.service
 
 LOCAL_IP="$(hostname -I | awk '{print $1}')"
 echo ""

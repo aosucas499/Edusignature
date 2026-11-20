@@ -1,6 +1,8 @@
 #!/bin/sh
 # Arranque X11/Openbox minimalista para Raspberry Pi 3 Model B
 # Sin paneles, sin escritorio, sin salvapantallas, cursor oculto.
+xsetroot -solid "#000000" 2>/dev/null || true
+xhost +SI:localuser:edusignage >/dev/null 2>&1 || true
 xset s off
 xset -dpms
 xset s noblank

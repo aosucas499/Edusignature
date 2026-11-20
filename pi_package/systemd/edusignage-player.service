@@ -1,6 +1,7 @@
 [Unit]
 Description=EduSignage Pi - Demonio Reproductor Exclusivo X11
 After=edusignage-x11.service edusignage-web.service
+Wants=edusignage-web.service
 Requires=edusignage-x11.service
 
 [Service]

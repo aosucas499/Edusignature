@@ -42,22 +42,48 @@ fi
 
 REPO_DIR="${INSTALL_DIR}/repo"
 
-echo "==> Asegurando dependencias X11 sin escritorio (xserver-xorg-legacy, dbus-x11, kbd)..."
-DEBIAN_FRONTEND=noninteractive apt-get install -y xserver-xorg-legacy dbus-x11 kbd >/dev/null 2>&1 || true
+echo "==> Asegurando dependencias X11 sin escritorio (xorg, xinit, openbox, xserver-xorg-legacy, dbus-x11, kbd)..."
+DEBIAN_FRONTEND=noninteractive apt-get install -y \
+  xserver-xorg xserver-xorg-legacy xinit openbox unclutter x11-xserver-utils dbus-x11 kbd >/dev/null 2>&1 || true
 usermod -aG video,audio,render,tty,input edusignage 2>/dev/null || true
 
 if [[ ! -f "${INSTALL_DIR}/backups/prev_default_target.txt" ]]; then
   systemctl get-default > "${INSTALL_DIR}/backups/prev_default_target.txt" 2>/dev/null || echo "multi-user.target" > "${INSTALL_DIR}/backups/prev_default_target.txt"
 fi
 
-for dm in lightdm gdm3 sddm xdm; do
-  if systemctl is-enabled "${dm}.service" >/dev/null 2>&1 || systemctl is-active "${dm}.service" >/dev/null 2>&1; then
-    echo "==> Deshabilitando gestor de escritorio (${dm}) para liberar HDMI..."
-    grep -qxF "$dm" "${INSTALL_DIR}/backups/prev_dm.txt" 2>/dev/null || echo "$dm" >> "${INSTALL_DIR}/backups/prev_dm.txt"
-    systemctl stop "${dm}.service" || true
-    systemctl disable "${dm}.service" || true
+if [[ -L /etc/systemd/system/display-manager.service ]]; then
+  DM_TARGET="$(basename "$(readlink -f /etc/systemd/system/display-manager.service)" .service 2>/dev/null || true)"
+  if [[ -n "$DM_TARGET" && "$DM_TARGET" != "null" ]]; then
+    grep -qxF "$DM_TARGET" "${INSTALL_DIR}/backups/prev_dm.txt" 2>/dev/null || echo "$DM_TARGET" >> "${INSTALL_DIR}/backups/prev_dm.txt"
   fi
+fi
+
+for dm in lightdm greetd gdm3 sddm xdm; do
+  if systemctl is-enabled "${dm}.service" >/dev/null 2>&1 || systemctl is-active "${dm}.service" >/dev/null 2>&1; then
+    echo "==> Deshabilitando y enmascarando gestor de escritorio (${dm}) para liberar HDMI..."
+    grep -qxF "$dm" "${INSTALL_DIR}/backups/prev_dm.txt" 2>/dev/null || echo "$dm" >> "${INSTALL_DIR}/backups/prev_dm.txt"
+  fi
+  systemctl stop "${dm}.service" 2>/dev/null || true
+  systemctl disable "${dm}.service" 2>/dev/null || true
+  systemctl mask "${dm}.service" 2>/dev/null || true
 done
+
+systemctl stop display-manager.service 2>/dev/null || true
+systemctl disable display-manager.service 2>/dev/null || true
+if [[ -e /etc/systemd/system/display-manager.service || -L /etc/systemd/system/display-manager.service ]]; then
+  [[ "$(readlink -f /etc/systemd/system/display-manager.service 2>/dev/null || true)" != "/dev/null" ]] && rm -f /etc/systemd/system/display-manager.service
+fi
+systemctl mask display-manager.service 2>/dev/null || true
+
+for tty_unit in getty@tty1 autologin@tty1; do
+  if systemctl is-enabled "${tty_unit}.service" >/dev/null 2>&1; then
+    grep -qxF "$tty_unit" "${INSTALL_DIR}/backups/prev_tty1.txt" 2>/dev/null || echo "$tty_unit" >> "${INSTALL_DIR}/backups/prev_tty1.txt"
+  fi
+  systemctl stop "${tty_unit}.service" 2>/dev/null || true
+  systemctl disable "${tty_unit}.service" 2>/dev/null || true
+  systemctl mask "${tty_unit}.service" 2>/dev/null || true
+done
+
 systemctl set-default multi-user.target || true
 
 cat <<'EOF' > /etc/X11/Xwrapper.config
@@ -89,13 +115,17 @@ fi
 
 cp "${REPO_DIR}/pi_package/systemd/"*.service /etc/systemd/system/
 systemctl daemon-reload
-systemctl stop getty@tty1.service || true
 chown -R edusignage:edusignage "${INSTALL_DIR}/app" "${INSTALL_DIR}/web" "${INSTALL_DIR}/repo"
 
-echo "==> Reiniciando servicios y sesión X11 exclusiva en HDMI..."
-systemctl start edusignage-system-helper
-systemctl start edusignage-x11
-systemctl start edusignage-web
-systemctl start edusignage-player
-systemctl start edusignage-scheduler
+echo "==> Habilitando y reiniciando servicios y sesión X11 exclusiva en HDMI..."
+systemctl enable --now edusignage-system-helper.service
+systemctl restart edusignage-system-helper.service
+systemctl enable --now edusignage-x11.service
+systemctl restart edusignage-x11.service
+systemctl enable --now edusignage-web.service
+systemctl restart edusignage-web.service
+systemctl enable --now edusignage-player.service
+systemctl restart edusignage-player.service
+systemctl enable --now edusignage-scheduler.service
+systemctl restart edusignage-scheduler.service
 echo "==> Actualización completada correctamente."

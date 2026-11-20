@@ -85,12 +85,16 @@ def send_player_command(payload: dict) -> bool:
         return False
     try:
         with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as sock:
-            sock.settimeout(4.0)
+            sock.settimeout(65.0)
             sock.connect(PLAYER_SOCKET)
             sock.sendall((json.dumps(payload) + "\n").encode("utf-8"))
             resp = sock.recv(4096).decode("utf-8").strip()
             logger.info("Respuesta reproductor: %s", resp)
-            return True
+            try:
+                parsed = json.loads(resp)
+                return bool(parsed.get("ok", False))
+            except Exception:
+                return False
     except Exception as exc:
         logger.error("Error comunicando con reproductor: %s", exc)
         return False

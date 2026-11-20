@@ -1,7 +1,7 @@
 [Unit]
 Description=EduSignage Pi - Sesión Ligera X11 + Openbox (Sin escritorio)
-Conflicts=getty@tty1.service lightdm.service display-manager.service
-After=systemd-user-sessions.service edusignage-system-helper.service
+Conflicts=getty@tty1.service autologin@tty1.service lightdm.service greetd.service gdm3.service sddm.service xdm.service display-manager.service
+After=systemd-user-sessions.service plymouth-quit.service plymouth-quit-wait.service edusignage-system-helper.service
 
 [Service]
 Type=simple
@@ -20,6 +20,8 @@ ExecStartPre=+/bin/mkdir -p /run/edusignage/xdg
 ExecStartPre=+/bin/chown edusignage:edusignage /run/edusignage /run/edusignage/xdg
 ExecStartPre=+/bin/chmod 0770 /run/edusignage
 ExecStartPre=+/bin/chmod 0700 /run/edusignage/xdg
+ExecStartPre=+/bin/sh -c 'if command -v plymouth >/dev/null 2>&1; then plymouth quit --wait || true; fi'
+ExecStartPre=+/bin/sh -c 'for i in $(seq 1 20); do [ -e /dev/dri/card0 ] || [ -e /dev/dri/card1 ] || [ -e /dev/fb0 ] && break; sleep 0.25; done'
 ExecStartPre=+/bin/chvt 1
 ExecStart=/usr/bin/xinit /etc/xdg/openbox/edusignage-xinitrc -- /usr/bin/Xorg :0 vt1 -nolisten tcp -keeptty
 Restart=always

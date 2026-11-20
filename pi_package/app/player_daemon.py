@@ -10,6 +10,7 @@ import logging
 import os
 import shutil
 import signal
+import socket
 import sqlite3
 import subprocess
 import time
@@ -47,7 +48,7 @@ class ExclusivePlayer:
             env["XAUTHORITY"] = XAUTHORITY
         return env
 
-    async def _wait_for_x11(self, timeout_sec: float = 20.0) -> bool:
+    async def _wait_for_x11(self, timeout_sec: float = 35.0) -> bool:
         display_num = DISPLAY.lstrip(":").split(".")[0] or "0"
         x11_sock = f"/tmp/.X11-unix/X{display_num}"
         deadline = time.time() + timeout_sec
@@ -56,6 +57,17 @@ class ExclusivePlayer:
                 return True
             await asyncio.sleep(0.5)
         logger.error("Servidor X11 no disponible en %s tras %.1fs", x11_sock, timeout_sec)
+        return False
+
+    async def _wait_for_web(self, port: int, timeout_sec: float = 20.0) -> bool:
+        deadline = time.time() + timeout_sec
+        while time.time() < deadline:
+            try:
+                with socket.create_connection(("127.0.0.1", port), timeout=1.0):
+                    return True
+            except OSError:
+                await asyncio.sleep(0.5)
+        logger.warning("Servidor web local :%s tardó más de %.1fs en responder", port, timeout_sec)
         return False
 
     def _disable_screensaver(self) -> None:
@@ -81,8 +93,7 @@ class ExclusivePlayer:
                     pass
         self.proc = None
         for browser in ("chromium-browser", "chromium", "firefox", "firefox-esr", "feh", "mpv", "retroarch", "soffice.bin"):
-            if self.current_item and self.current_item.get("content_type") != "app":
-                subprocess.run(["pkill", "-f", browser], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            subprocess.run(["pkill", "-u", "edusignage", "-f", browser], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
     def _lookup_authorized_app(self, target_ref: str) -> Optional[dict]:
         conn = sqlite3.connect(DB_PATH)
@@ -219,6 +230,10 @@ class ExclusivePlayer:
                 err = "Servidor gráfico X11 (:0) no está disponible."
                 self._write_state("error", err)
                 return {"ok": False, "error": err}
+
+            if item.get("content_type", "standby") == "standby":
+                port = int(os.environ.get("EDUSIGNAGE_WEB_PORT", "8080"))
+                await self._wait_for_web(port)
 
             self._disable_screensaver()
             self.current_item = item

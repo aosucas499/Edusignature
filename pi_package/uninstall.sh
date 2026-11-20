@@ -17,11 +17,23 @@ systemctl daemon-reload
 rm -f /etc/avahi/services/edusignage.service
 rm -f /etc/xdg/openbox/edusignage-xinitrc
 
+for unit in display-manager lightdm greetd gdm3 sddm xdm getty@tty1 autologin@tty1; do
+  systemctl unmask "${unit}.service" 2>/dev/null || true
+done
+
 if [[ -f /opt/edusignage/backups/prev_default_target.txt ]]; then
   PREV_TARGET="$(cat /opt/edusignage/backups/prev_default_target.txt | tr -d '[:space:]')"
   if [[ -n "$PREV_TARGET" ]]; then
     systemctl set-default "$PREV_TARGET" || true
   fi
+fi
+
+if [[ -f /opt/edusignage/backups/prev_tty1.txt ]]; then
+  while IFS= read -r tty_unit; do
+    [[ -n "$tty_unit" ]] && systemctl enable --now "${tty_unit}.service" 2>/dev/null || true
+  done < /opt/edusignage/backups/prev_tty1.txt
+else
+  systemctl enable --now getty@tty1.service 2>/dev/null || true
 fi
 
 if [[ -f /opt/edusignage/backups/prev_dm.txt ]]; then

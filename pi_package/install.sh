@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
+trap '' HUP
 
 # EduSignage Pi - Instalador Automático mediante Git Clone para Raspberry Pi OS (Lite y Desktop, 32/64-bit)
 # Optimizado para Raspberry Pi 3 Model B (1 GB RAM, ARM Cortex-A53, VideoCore IV)
@@ -39,7 +40,7 @@ apt-get update -y
 DEBIAN_FRONTEND=noninteractive apt-get install -y \
   git curl ca-certificates \
   python3 python3-venv python3-pip python3-psutil python3-dev sqlite3 \
-  xserver-xorg xserver-xorg-legacy xinit openbox unclutter x11-xserver-utils dbus-x11 kbd \
+  xserver-xorg xserver-xorg-legacy xinit xauth openbox unclutter x11-xserver-utils dbus-x11 kbd \
   feh mpv avahi-daemon network-manager
 
 DEBIAN_FRONTEND=noninteractive apt-get install -y chromium || \
@@ -102,15 +103,15 @@ for dm in lightdm greetd gdm3 sddm xdm; do
     echo "==> Deshabilitando y enmascarando gestor de escritorio (${dm})..."
     grep -qxF "$dm" "${INSTALL_DIR}/backups/prev_dm.txt" 2>/dev/null || echo "$dm" >> "${INSTALL_DIR}/backups/prev_dm.txt"
   fi
-  systemctl stop "${dm}.service" 2>/dev/null || true
   systemctl disable "${dm}.service" 2>/dev/null || true
   systemctl mask "${dm}.service" 2>/dev/null || true
 done
 
-systemctl stop display-manager.service 2>/dev/null || true
 systemctl disable display-manager.service 2>/dev/null || true
 if [[ -e /etc/systemd/system/display-manager.service || -L /etc/systemd/system/display-manager.service ]]; then
-  [[ "$(readlink -f /etc/systemd/system/display-manager.service 2>/dev/null || true)" != "/dev/null" ]] && rm -f /etc/systemd/system/display-manager.service
+  if [[ "$(readlink -f /etc/systemd/system/display-manager.service 2>/dev/null || true)" != "/dev/null" ]]; then
+    rm -f /etc/systemd/system/display-manager.service
+  fi
 fi
 systemctl mask display-manager.service 2>/dev/null || true
 
@@ -118,7 +119,6 @@ for tty_unit in getty@tty1 autologin@tty1; do
   if systemctl is-enabled "${tty_unit}.service" >/dev/null 2>&1; then
     grep -qxF "$tty_unit" "${INSTALL_DIR}/backups/prev_tty1.txt" 2>/dev/null || echo "$tty_unit" >> "${INSTALL_DIR}/backups/prev_tty1.txt"
   fi
-  systemctl stop "${tty_unit}.service" 2>/dev/null || true
   systemctl disable "${tty_unit}.service" 2>/dev/null || true
   systemctl mask "${tty_unit}.service" 2>/dev/null || true
 done
@@ -133,6 +133,7 @@ fi
 git config --system --add safe.directory "${INSTALL_DIR}/repo" 2>/dev/null || true
 
 cp -r "${INSTALL_DIR}/repo/pi_package/app/"* "${INSTALL_DIR}/app/"
+chmod 0755 "${INSTALL_DIR}/app/start_x11.sh"
 
 echo "==> Configurando entorno virtual Python..."
 python3 -m venv --system-site-packages "${INSTALL_DIR}/venv"
@@ -194,12 +195,42 @@ find "${INSTALL_DIR}/media" -type f -exec chmod 0644 {} \;
 echo "==> Instalando e iniciando servicios systemd..."
 cp "${PKG_DIR}/systemd/"*.service /etc/systemd/system/
 systemctl daemon-reload
-systemctl stop getty@tty1.service || true
-systemctl enable --now edusignage-system-helper.service
-systemctl enable --now edusignage-x11.service
-systemctl enable --now edusignage-web.service
-systemctl enable --now edusignage-player.service
-systemctl enable --now edusignage-scheduler.service
+systemctl enable edusignage-system-helper.service edusignage-x11.service edusignage-web.service edusignage-player.service edusignage-scheduler.service
+
+for conflict_unit in lightdm greetd gdm3 sddm xdm display-manager getty@tty1 autologin@tty1; do
+  systemctl stop "${conflict_unit}.service" 2>/dev/null || true
+done
+
+systemctl restart edusignage-system-helper.service
+systemctl restart edusignage-x11.service
+systemctl restart edusignage-web.service
+systemctl restart edusignage-player.service
+systemctl restart edusignage-scheduler.service
+
+echo "==> Verificando estado de bloqueo del escritorio y respuesta X11..."
+X11_READY=false
+for _ in $(seq 1 15); do
+  if su -s /bin/sh edusignage -c "DISPLAY=:0 XAUTHORITY=/opt/edusignage/.Xauthority xset q >/dev/null 2>&1"; then
+    X11_READY=true
+    break
+  fi
+  sleep 1
+done
+
+for unit in lightdm display-manager getty@tty1; do
+  ST="$(systemctl is-enabled "${unit}.service" 2>/dev/null || true)"
+  echo "  - ${unit}.service: ${ST:-not-found}"
+done
+for svc in edusignage-system-helper edusignage-x11 edusignage-web edusignage-player edusignage-scheduler; do
+  EN="$(systemctl is-enabled "${svc}.service" 2>/dev/null || true)"
+  AC="$(systemctl is-active "${svc}.service" 2>/dev/null || true)"
+  echo "  - ${svc}.service: enabled=${EN:-no} active=${AC:-no}"
+done
+if [[ "$X11_READY" == "true" ]]; then
+  echo "  - [OK] Servidor X11 (:0) responde correctamente con cookie propia de 'edusignage'."
+else
+  echo "  - [ADVERTENCIA] X11 (:0) aún no respondió; ejecuta 'sudo reboot' y revisa 'journalctl -u edusignage-x11 -n 40'."
+fi
 
 LOCAL_IP="$(hostname -I | awk '{print $1}')"
 echo ""

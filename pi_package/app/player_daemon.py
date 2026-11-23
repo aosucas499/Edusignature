@@ -44,19 +44,39 @@ class ExclusivePlayer:
         env["HOME"] = "/opt/edusignage"
         env["DISPLAY"] = DISPLAY
         env["XDG_RUNTIME_DIR"] = XDG_RUNTIME_DIR
-        if os.path.exists(XAUTHORITY):
-            env["XAUTHORITY"] = XAUTHORITY
+        env["XAUTHORITY"] = XAUTHORITY
+        if not env.get("DBUS_SESSION_BUS_ADDRESS"):
+            env.pop("DBUS_SESSION_BUS_ADDRESS", None)
         return env
 
     async def _wait_for_x11(self, timeout_sec: float = 35.0) -> bool:
         display_num = DISPLAY.lstrip(":").split(".")[0] or "0"
         x11_sock = f"/tmp/.X11-unix/X{display_num}"
+        xset_bin = shutil.which("xset")
         deadline = time.time() + timeout_sec
+        saw_socket_unauth = False
         while time.time() < deadline:
             if os.path.exists(x11_sock):
-                return True
-            await asyncio.sleep(0.5)
-        logger.error("Servidor X11 no disponible en %s tras %.1fs", x11_sock, timeout_sec)
+                if not xset_bin:
+                    return True
+                res = subprocess.run(
+                    [xset_bin, "-display", DISPLAY, "q"],
+                    env=self._env(),
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                )
+                if res.returncode == 0:
+                    return True
+                saw_socket_unauth = True
+            await asyncio.sleep(0.6)
+        if saw_socket_unauth:
+            logger.error(
+                "El socket %s existe pero no autoriza a 'edusignage' (XAUTHORITY=%s). ¿Sigue activo LightDM?",
+                x11_sock,
+                XAUTHORITY,
+            )
+        else:
+            logger.error("Servidor X11 no disponible en %s tras %.1fs", x11_sock, timeout_sec)
         return False
 
     async def _wait_for_web(self, port: int, timeout_sec: float = 20.0) -> bool:
@@ -203,12 +223,17 @@ class ExclusivePlayer:
 
     def _spawn_process(self, cmd: list[str]) -> subprocess.Popen:
         os.makedirs(os.path.dirname(CHILD_LOG_FILE), exist_ok=True)
+        env = self._env()
+        launch_cmd = cmd
+        dbus_bin = shutil.which("dbus-run-session")
+        if dbus_bin and "DBUS_SESSION_BUS_ADDRESS" not in env:
+            launch_cmd = [dbus_bin, "--", *cmd]
         log_fh = open(CHILD_LOG_FILE, "ab")
-        log_fh.write(f"\n--- [{time.strftime('%Y-%m-%d %H:%M:%S')}] EXEC: {' '.join(cmd)} ---\n".encode("utf-8"))
+        log_fh.write(f"\n--- [{time.strftime('%Y-%m-%d %H:%M:%S')}] EXEC: {' '.join(launch_cmd)} ---\n".encode("utf-8"))
         log_fh.flush()
         proc = subprocess.Popen(
-            cmd,
-            env=self._env(),
+            launch_cmd,
+            env=env,
             preexec_fn=os.setsid,
             stdout=log_fh,
             stderr=subprocess.STDOUT,

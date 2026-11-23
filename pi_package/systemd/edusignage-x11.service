@@ -7,9 +7,7 @@ After=systemd-user-sessions.service plymouth-quit.service plymouth-quit-wait.ser
 Type=simple
 User=edusignage
 Group=edusignage
-PAMName=login
-TTYPath=/dev/tty1
-StandardInput=tty
+WorkingDirectory=/opt/edusignage
 StandardOutput=journal
 StandardError=journal
 Environment=HOME=/opt/edusignage
@@ -20,10 +18,11 @@ ExecStartPre=+/bin/mkdir -p /run/edusignage/xdg
 ExecStartPre=+/bin/chown edusignage:edusignage /run/edusignage /run/edusignage/xdg
 ExecStartPre=+/bin/chmod 0770 /run/edusignage
 ExecStartPre=+/bin/chmod 0700 /run/edusignage/xdg
+ExecStartPre=+/bin/sh -c 'if [ -f /tmp/.X0-lock ]; then p=$(tr -dc "0-9" < /tmp/.X0-lock); if [ -z "$p" ] || ! kill -0 "$p" 2>/dev/null; then rm -f /tmp/.X0-lock /tmp/.X11-unix/X0 || true; fi; fi'
 ExecStartPre=+/bin/sh -c 'if command -v plymouth >/dev/null 2>&1; then plymouth quit --wait || true; fi'
 ExecStartPre=+/bin/sh -c 'for i in $(seq 1 20); do [ -e /dev/dri/card0 ] || [ -e /dev/dri/card1 ] || [ -e /dev/fb0 ] && break; sleep 0.25; done'
 ExecStartPre=+/bin/chvt 1
-ExecStart=/usr/bin/xinit /etc/xdg/openbox/edusignage-xinitrc -- /usr/bin/Xorg :0 vt1 -nolisten tcp -keeptty
+ExecStart=/bin/bash /opt/edusignage/app/start_x11.sh
 Restart=always
 RestartSec=3
 

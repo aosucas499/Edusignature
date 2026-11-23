@@ -1,10 +1,13 @@
 #!/bin/sh
-# Arranque X11/Openbox minimalista para Raspberry Pi 3 Model B
-# Sin paneles, sin escritorio, sin salvapantallas, cursor oculto.
+# Arranque X11/Openbox minimalista para Raspberry Pi (Trixie / Bookworm / Bullseye)
+# Sin paneles, sin escritorio, sin salvapantallas, con sesión D-Bus aislada.
 xsetroot -solid "#000000" 2>/dev/null || true
 xhost +SI:localuser:edusignage >/dev/null 2>&1 || true
-xset s off
-xset -dpms
-xset s noblank
+xset s off 2>/dev/null || true
+xset -dpms 2>/dev/null || true
+xset s noblank 2>/dev/null || true
 unclutter -idle 0.5 -root &
+if command -v dbus-run-session >/dev/null 2>&1; then
+  exec dbus-run-session -- openbox-session
+fi
 exec openbox-session

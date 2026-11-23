@@ -96,7 +96,7 @@ sudo ./install.sh
 
 ### Qué realiza `install.sh` automáticamente
 1. Detecta la arquitectura (`armv7l` / `aarch64`) y versión de Raspberry Pi OS.
-2. Instala únicamente las dependencias ligeras necesarias (`xserver-xorg`, `xserver-xorg-legacy`, `xinit`, `openbox`, `unclutter`, `x11-xserver-utils`, `dbus-x11`, `kbd`, `feh`, `mpv`, `chromium`, `python3-venv`, `sqlite3`, `avahi-daemon` y opcionalmente `firefox-esr`, `retroarch` y `samba`).
+2. Instala únicamente las dependencias ligeras necesarias (`xserver-xorg`, `xserver-xorg-legacy`, `xinit`, `xauth`, `openbox`, `unclutter`, `x11-xserver-utils`, `dbus-x11`, `kbd`, `feh`, `mpv`, `chromium`, `python3-venv`, `sqlite3`, `avahi-daemon` y opcionalmente `firefox-esr`, `retroarch` y `samba`).
 3. Crea el usuario de servicio sin privilegios `edusignage` (con acceso a `video`, `audio`, `render`, `input`, `tty`) y la estructura `/opt/edusignage/{app,web,data,media,backups,logs}`.
 4. Configura `/etc/X11/Xwrapper.config` y enmascara de forma reversible `lightdm`/`display-manager`/`greetd` y `getty@tty1` (si usas Raspberry Pi OS with Desktop) para ceder la salida HDMI (`vt1`, `DISPLAY=:0`) a Openbox sin escritorio ni barra de tareas.
 5. Configura **1024 MB de Swap** para garantizar estabilidad en Raspberry Pi 3B de 1 GB de RAM.

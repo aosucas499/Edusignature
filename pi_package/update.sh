@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
+trap '' HUP
 
 # EduSignage Pi - Actualizador Automático mediante Git Pull (sin perder base de datos ni medios)
 if [[ $EUID -ne 0 ]]; then
@@ -42,9 +43,9 @@ fi
 
 REPO_DIR="${INSTALL_DIR}/repo"
 
-echo "==> Asegurando dependencias X11 sin escritorio (xorg, xinit, openbox, xserver-xorg-legacy, dbus-x11, kbd)..."
+echo "==> Asegurando dependencias X11 sin escritorio (xorg, xinit, xauth, openbox, xserver-xorg-legacy, dbus-x11, kbd)..."
 DEBIAN_FRONTEND=noninteractive apt-get install -y \
-  xserver-xorg xserver-xorg-legacy xinit openbox unclutter x11-xserver-utils dbus-x11 kbd >/dev/null 2>&1 || true
+  xserver-xorg xserver-xorg-legacy xinit xauth openbox unclutter x11-xserver-utils dbus-x11 kbd >/dev/null 2>&1 || true
 usermod -aG video,audio,render,tty,input edusignage 2>/dev/null || true
 
 if [[ ! -f "${INSTALL_DIR}/backups/prev_default_target.txt" ]]; then
@@ -58,20 +59,20 @@ if [[ -L /etc/systemd/system/display-manager.service ]]; then
   fi
 fi
 
+echo "==> Enmascarando de forma reversible gestores de escritorio y tty1..."
 for dm in lightdm greetd gdm3 sddm xdm; do
   if systemctl is-enabled "${dm}.service" >/dev/null 2>&1 || systemctl is-active "${dm}.service" >/dev/null 2>&1; then
-    echo "==> Deshabilitando y enmascarando gestor de escritorio (${dm}) para liberar HDMI..."
     grep -qxF "$dm" "${INSTALL_DIR}/backups/prev_dm.txt" 2>/dev/null || echo "$dm" >> "${INSTALL_DIR}/backups/prev_dm.txt"
   fi
-  systemctl stop "${dm}.service" 2>/dev/null || true
   systemctl disable "${dm}.service" 2>/dev/null || true
   systemctl mask "${dm}.service" 2>/dev/null || true
 done
 
-systemctl stop display-manager.service 2>/dev/null || true
 systemctl disable display-manager.service 2>/dev/null || true
 if [[ -e /etc/systemd/system/display-manager.service || -L /etc/systemd/system/display-manager.service ]]; then
-  [[ "$(readlink -f /etc/systemd/system/display-manager.service 2>/dev/null || true)" != "/dev/null" ]] && rm -f /etc/systemd/system/display-manager.service
+  if [[ "$(readlink -f /etc/systemd/system/display-manager.service 2>/dev/null || true)" != "/dev/null" ]]; then
+    rm -f /etc/systemd/system/display-manager.service
+  fi
 fi
 systemctl mask display-manager.service 2>/dev/null || true
 
@@ -79,7 +80,6 @@ for tty_unit in getty@tty1 autologin@tty1; do
   if systemctl is-enabled "${tty_unit}.service" >/dev/null 2>&1; then
     grep -qxF "$tty_unit" "${INSTALL_DIR}/backups/prev_tty1.txt" 2>/dev/null || echo "$tty_unit" >> "${INSTALL_DIR}/backups/prev_tty1.txt"
   fi
-  systemctl stop "${tty_unit}.service" 2>/dev/null || true
   systemctl disable "${tty_unit}.service" 2>/dev/null || true
   systemctl mask "${tty_unit}.service" 2>/dev/null || true
 done
@@ -91,10 +91,11 @@ allowed_users=anybody
 needs_root_rights=yes
 EOF
 
-echo "==> Deteniendo servicios EduSignage..."
-systemctl stop edusignage-scheduler edusignage-player edusignage-x11 edusignage-web || true
+echo "==> Actualizando código de aplicación, Openbox y dependencias Python..."
+systemctl stop edusignage-scheduler edusignage-player edusignage-x11 edusignage-web 2>/dev/null || true
 
 cp -r "${REPO_DIR}/pi_package/app/"* "${INSTALL_DIR}/app/"
+chmod 0755 "${INSTALL_DIR}/app/start_x11.sh"
 cp "${REPO_DIR}/pi_package/openbox/autostart" /etc/xdg/openbox/edusignage-xinitrc
 chmod 0755 /etc/xdg/openbox/edusignage-xinitrc
 "${INSTALL_DIR}/venv/bin/pip" install -r "${REPO_DIR}/pi_package/requirements.txt"
@@ -117,15 +118,65 @@ cp "${REPO_DIR}/pi_package/systemd/"*.service /etc/systemd/system/
 systemctl daemon-reload
 chown -R edusignage:edusignage "${INSTALL_DIR}/app" "${INSTALL_DIR}/web" "${INSTALL_DIR}/repo"
 
-echo "==> Habilitando y reiniciando servicios y sesión X11 exclusiva en HDMI..."
-systemctl enable --now edusignage-system-helper.service
+echo "==> Habilitando servicios de EduSignage..."
+systemctl enable edusignage-system-helper.service edusignage-x11.service edusignage-web.service edusignage-player.service edusignage-scheduler.service
+
+echo "==> Liberando HDMI de sesiones de escritorio previas y arrancando EduSignage..."
+for conflict_unit in lightdm greetd gdm3 sddm xdm display-manager getty@tty1 autologin@tty1; do
+  systemctl stop "${conflict_unit}.service" 2>/dev/null || true
+done
+
 systemctl restart edusignage-system-helper.service
-systemctl enable --now edusignage-x11.service
 systemctl restart edusignage-x11.service
-systemctl enable --now edusignage-web.service
 systemctl restart edusignage-web.service
-systemctl enable --now edusignage-player.service
 systemctl restart edusignage-player.service
-systemctl enable --now edusignage-scheduler.service
 systemctl restart edusignage-scheduler.service
-echo "==> Actualización completada correctamente."
+
+echo ""
+echo "==> Autoverificación post-actualización:"
+ALL_OK=true
+
+for unit in lightdm display-manager getty@tty1; do
+  ST="$(systemctl is-enabled "${unit}.service" 2>/dev/null || true)"
+  if [[ "$ST" == "masked" || "$ST" == "not-found" || -z "$ST" ]]; then
+    echo "  [OK] ${unit}.service -> ${ST:-not-found}"
+  else
+    echo "  [ERROR] ${unit}.service sigue en estado '${ST}' (debería ser masked)"
+    ALL_OK=false
+  fi
+done
+
+for svc in edusignage-system-helper edusignage-x11 edusignage-web edusignage-player edusignage-scheduler; do
+  EN="$(systemctl is-enabled "${svc}.service" 2>/dev/null || true)"
+  AC="$(systemctl is-active "${svc}.service" 2>/dev/null || true)"
+  if [[ "$EN" == "enabled" && "$AC" == "active" ]]; then
+    echo "  [OK] ${svc}.service -> enabled + active"
+  else
+    echo "  [ERROR] ${svc}.service -> enabled=${EN:-no}, active=${AC:-no}"
+    ALL_OK=false
+  fi
+done
+
+X11_READY=false
+for _ in $(seq 1 15); do
+  if su -s /bin/sh edusignage -c "DISPLAY=:0 XAUTHORITY=/opt/edusignage/.Xauthority xset q >/dev/null 2>&1"; then
+    X11_READY=true
+    break
+  fi
+  sleep 1
+done
+
+if [[ "$X11_READY" == "true" ]]; then
+  echo "  [OK] X11 (:0) responde correctamente para el usuario 'edusignage'."
+else
+  echo "  [ERROR] X11 (:0) no autorizó o no respondió en 15s."
+  ALL_OK=false
+fi
+
+echo ""
+if [[ "$ALL_OK" == "true" ]]; then
+  echo "==> Actualización y verificación completadas correctamente."
+else
+  echo "==> Actualización completada con advertencias. Revisa: journalctl -u edusignage-x11 -u edusignage-player -n 40"
+  exit 1
+fi

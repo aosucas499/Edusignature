@@ -124,6 +124,12 @@ async def init_db() -> None:
 
         await db.execute("INSERT OR IGNORE INTO standby_config (id) VALUES (1)")
 
+        old_chromium_args = "--kiosk --noerrdialogs --disable-infobars --disable-dev-shm-usage"
+        new_chromium_args = (
+            "--kiosk --noerrdialogs --disable-infobars --disable-dev-shm-usage "
+            "--disable-metrics --disable-metrics-reporting --disable-breakpad --disable-crash-reporter"
+        )
+
         cur = await db.execute("SELECT COUNT(*) as c FROM authorized_apps")
         row = await cur.fetchone()
         if row["c"] == 0:
@@ -131,7 +137,7 @@ async def init_db() -> None:
                 ("RetroArch (Emulador Educativo)", "/usr/bin/retroarch", "--fullscreen", "fullscreen", 30, "standby", 1, "medium", 1, "Emulador ligero compatible con VideoCore IV"),
                 ("Presentación feh (Carpeta Imágenes)", "/usr/bin/feh", "--fullscreen --auto-zoom --hide-pointer --slideshow-delay 8", "fullscreen", 60, "standby", 1, "low", 1, "Opción predeterminada (<35 MB RAM) para RPi 3B"),
                 ("Reproductor MPV Local", "/usr/bin/mpv", "--fs --no-osd-bar --hwdec=auto-safe", "fullscreen", 45, "standby", 1, "low", 1, "Reproducción de vídeo local H.264/MP4"),
-                ("Chromium Kiosco", "/usr/bin/chromium-browser", "--kiosk --noerrdialogs --disable-infobars --disable-dev-shm-usage", "fullscreen", 120, "standby", 1, "high", 1, "Navegador web kiosco (se cierra al cambiar)"),
+                ("Chromium Kiosco", "/usr/bin/chromium-browser", new_chromium_args, "fullscreen", 120, "standby", 1, "high", 1, "Navegador web kiosco sin métricas/volcados (se cierra al cambiar)"),
                 ("Firefox ESR Kiosco", "/usr/bin/firefox-esr", "--kiosk", "fullscreen", 90, "standby", 0, "high", 1, "Alternativa opcional; requiere swap >= 1024 MB"),
                 ("LibreOffice Impress", "/usr/bin/libreoffice", "--impress --norestore", "fullscreen", 30, "standby", 1, "medium", 1, "Presentaciones ODP/PPTX locales (añade ruta .odp --show si deseas reproducción directa)"),
             ]
@@ -142,6 +148,11 @@ async def init_db() -> None:
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 apps,
+            )
+        else:
+            await db.execute(
+                "UPDATE authorized_apps SET args = ? WHERE name = 'Chromium Kiosco' AND args = ?",
+                (new_chromium_args, old_chromium_args),
             )
 
         await db.commit()

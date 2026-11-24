@@ -201,6 +201,14 @@ for conflict_unit in lightdm greetd gdm3 sddm xdm display-manager getty@tty1 aut
   systemctl stop "${conflict_unit}.service" 2>/dev/null || true
 done
 
+for ch_dir in "${INSTALL_DIR}/.config/chromium" "${INSTALL_DIR}/data/chromium-profile"; do
+  if [[ -d "$ch_dir" ]]; then
+    find "$ch_dir" -maxdepth 1 -type f -name '*.pma' -delete 2>/dev/null || true
+    [[ -d "${ch_dir}/BrowserMetrics" ]] && find "${ch_dir}/BrowserMetrics" -type f -name '*.pma' -delete 2>/dev/null || true
+    [[ -d "${ch_dir}/Crash Reports" ]] && rm -rf "${ch_dir}/Crash Reports/"* 2>/dev/null || true
+  fi
+done
+
 systemctl restart edusignage-system-helper.service
 systemctl restart edusignage-x11.service
 systemctl restart edusignage-web.service

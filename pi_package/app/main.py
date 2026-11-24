@@ -243,7 +243,7 @@ def read_player_state() -> dict[str, Any]:
         "contentType": "standby",
         "targetRef": "standby",
         "activeApp": "Chromium Kiosco (Standby Local)",
-        "commandPreview": "chromium-browser --kiosk --app=http://127.0.0.1:8080/standby",
+        "commandPreview": "chromium-browser --kiosk --app=http://127.0.0.1:8080/standby --disable-metrics --disable-metrics-reporting --disable-breakpad --disable-crash-reporter",
         "config": {},
         "startedAt": datetime.utcnow().isoformat() + "Z",
         "manualExpiresAt": None,

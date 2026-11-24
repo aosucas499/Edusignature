@@ -270,6 +270,10 @@ export function initDatabase(): void {
   }
 
   // Seed authorized Linux apps if empty
+  const oldChromiumArgs = '--kiosk --noerrdialogs --disable-infobars --disable-dev-shm-usage';
+  const newChromiumArgs =
+    '--kiosk --noerrdialogs --disable-infobars --disable-dev-shm-usage --disable-metrics --disable-metrics-reporting --disable-breakpad --disable-crash-reporter';
+
   const appCount = (db.prepare('SELECT COUNT(*) as count FROM authorized_apps').get() as { count: number }).count;
   if (appCount === 0) {
     const insertApp = db.prepare(`
@@ -281,13 +285,18 @@ export function initDatabase(): void {
       ['RetroArch (Emulador Educativo)', '/usr/bin/retroarch', '--fullscreen', 'fullscreen', 30, 'standby', 1, 'medium', 1, 'Ejecución a pantalla completa compatible con VideoCore IV en Raspberry Pi 3B.'],
       ['Presentación feh (Carpeta Imágenes)', '/usr/bin/feh', '--fullscreen --auto-zoom --hide-pointer --slideshow-delay 8', 'fullscreen', 60, 'standby', 1, 'low', 1, 'Opción predeterminada de muy bajo consumo (<35 MB RAM) para Raspberry Pi 3B.'],
       ['Reproductor MPV Local', '/usr/bin/mpv', '--fs --no-osd-bar --hwdec=auto-safe', 'fullscreen', 45, 'standby', 1, 'low', 1, 'Reproductor ligero para vídeos MP4/MKV H.264 locales.'],
-      ['Chromium Kiosco', '/usr/bin/chromium-browser', '--kiosk --noerrdialogs --disable-infobars --disable-dev-shm-usage', 'fullscreen', 120, 'standby', 1, 'high', 1, 'Se cierra automáticamente al cambiar de tarea para liberar ~420 MB de RAM.'],
+      ['Chromium Kiosco', '/usr/bin/chromium-browser', newChromiumArgs, 'fullscreen', 120, 'standby', 1, 'high', 1, 'Sin métricas/volcados; se cierra automáticamente al cambiar de tarea para liberar ~420 MB de RAM.'],
       ['Firefox ESR Kiosco', '/usr/bin/firefox-esr', '--kiosk', 'fullscreen', 90, 'standby', 0, 'high', 1, 'Alternativa opcional; requiere swap de 1024 MB en Raspberry Pi 3B de 1 GB RAM.'],
       ['LibreOffice Impress', '/usr/bin/libreoffice', '--impress --norestore', 'fullscreen', 30, 'standby', 1, 'medium', 1, 'Presentaciones ODP/PPTX locales (añade ruta .odp --show si deseas reproducción directa).'],
     ];
     for (const row of initialApps) {
       insertApp.run(...row);
     }
+  } else {
+    db.prepare("UPDATE authorized_apps SET args = ? WHERE name = 'Chromium Kiosco' AND args = ?").run(
+      newChromiumArgs,
+      oldChromiumArgs
+    );
   }
 
   const wifiCount = (db.prepare('SELECT COUNT(*) as count FROM wifi_profiles').get() as { count: number }).count;

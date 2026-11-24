@@ -37,7 +37,8 @@ class SignageEngine {
     contentType: 'standby',
     targetRef: 'standby',
     activeApp: 'Chromium Kiosco (Standby Local)',
-    commandPreview: 'chromium-browser --kiosk --app=http://127.0.0.1:8080/standby --noerrdialogs',
+    commandPreview:
+      'chromium-browser --kiosk --app=http://127.0.0.1:8080/standby --noerrdialogs --disable-metrics --disable-metrics-reporting --disable-breakpad --disable-crash-reporter',
     config: {},
     startedAt: new Date().toISOString(),
     manualExpiresAt: null,
@@ -216,7 +217,7 @@ class SignageEngine {
       const cmd =
         browser === 'firefox-esr'
           ? `/usr/bin/firefox-esr --kiosk ${targetRef}`
-          : `/usr/bin/chromium-browser --kiosk --noerrdialogs --disable-infobars --disable-dev-shm-usage --force-device-scale-factor=${zoom} ${targetRef}`;
+          : `/usr/bin/chromium-browser --kiosk --noerrdialogs --disable-infobars --disable-dev-shm-usage --disable-metrics --disable-metrics-reporting --disable-breakpad --disable-crash-reporter --force-device-scale-factor=${zoom} ${targetRef}`;
       return {
         activeApp: browser === 'firefox-esr' ? 'Firefox ESR (Kiosco)' : 'Chromium (Kiosco)',
         commandPreview: cmd,
@@ -272,7 +273,8 @@ class SignageEngine {
 
     return {
       activeApp: 'Pantalla de Espera Institucional',
-      commandPreview: '/usr/bin/chromium-browser --kiosk --app=http://127.0.0.1:8080/standby --noerrdialogs',
+      commandPreview:
+        '/usr/bin/chromium-browser --kiosk --app=http://127.0.0.1:8080/standby --noerrdialogs --disable-metrics --disable-metrics-reporting --disable-breakpad --disable-crash-reporter',
       error: null,
     };
   }

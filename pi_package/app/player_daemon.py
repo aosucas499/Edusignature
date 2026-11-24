@@ -29,6 +29,16 @@ DISPLAY = os.environ.get("DISPLAY", ":0")
 XAUTHORITY = os.environ.get("XAUTHORITY", "/opt/edusignage/.Xauthority")
 XDG_RUNTIME_DIR = os.environ.get("XDG_RUNTIME_DIR", "/run/edusignage/xdg")
 CHILD_LOG_FILE = "/opt/edusignage/logs/player_child.log"
+CHROMIUM_PROFILE_DIRS = (
+    "/opt/edusignage/.config/chromium",
+    "/opt/edusignage/data/chromium-profile",
+)
+CHROMIUM_TELEMETRY_FLAGS = (
+    "--disable-metrics",
+    "--disable-metrics-reporting",
+    "--disable-breakpad",
+    "--disable-crash-reporter",
+)
 
 
 class ExclusivePlayer:
@@ -127,6 +137,63 @@ class ExclusivePlayer:
         finally:
             conn.close()
 
+    def _cleanup_chromium_telemetry(self) -> None:
+        removed_files = 0
+        freed_bytes = 0
+        for profile_root in CHROMIUM_PROFILE_DIRS:
+            if not os.path.isdir(profile_root):
+                continue
+            try:
+                with os.scandir(profile_root) as entries:
+                    for entry in entries:
+                        if entry.is_file(follow_symlinks=False) and entry.name.endswith(".pma"):
+                            try:
+                                freed_bytes += entry.stat(follow_symlinks=False).st_size
+                                os.unlink(entry.path)
+                                removed_files += 1
+                            except OSError:
+                                pass
+            except OSError:
+                pass
+
+            metrics_dir = os.path.join(profile_root, "BrowserMetrics")
+            if os.path.isdir(metrics_dir):
+                for root, _, files in os.walk(metrics_dir):
+                    for fname in files:
+                        if fname.endswith(".pma"):
+                            fpath = os.path.join(root, fname)
+                            try:
+                                freed_bytes += os.path.getsize(fpath)
+                                os.unlink(fpath)
+                                removed_files += 1
+                            except OSError:
+                                pass
+
+            crash_dir = os.path.join(profile_root, "Crash Reports")
+            if os.path.isdir(crash_dir):
+                for root, dirs, files in os.walk(crash_dir, topdown=False):
+                    for fname in files:
+                        fpath = os.path.join(root, fname)
+                        try:
+                            freed_bytes += os.path.getsize(fpath)
+                            os.unlink(fpath)
+                            removed_files += 1
+                        except OSError:
+                            pass
+                    for dname in dirs:
+                        try:
+                            os.rmdir(os.path.join(root, dname))
+                        except OSError:
+                            pass
+
+        if removed_files > 0:
+            freed_mb = freed_bytes / (1024 * 1024)
+            logger.info(
+                "Limpieza preventiva Chromium: %d archivo(s) .pma/crash eliminados (%.2f MB liberados)",
+                removed_files,
+                freed_mb,
+            )
+
     def _chromium_base_flags(self) -> list[str]:
         profile_dir = "/opt/edusignage/data/chromium-profile"
         os.makedirs(profile_dir, exist_ok=True)
@@ -140,6 +207,7 @@ class ExclusivePlayer:
             "--check-for-update-interval=31536000",
             f"--user-data-dir={profile_dir}",
             "--disable-dev-shm-usage",
+            *CHROMIUM_TELEMETRY_FLAGS,
         ]
 
     def _build_command(self, item: dict) -> list[str]:
@@ -200,6 +268,10 @@ class ExclusivePlayer:
             if not os.path.exists(binary):
                 raise FileNotFoundError(f"Binario no encontrado: {binary}")
             args = [a for a in app["args"].split(" ") if a.strip()]
+            if "chromium" in os.path.basename(binary).lower():
+                for flag in CHROMIUM_TELEMETRY_FLAGS:
+                    if flag not in args:
+                        args.append(flag)
             return [binary, *args]
 
         chromium = shutil.which("chromium-browser") or shutil.which("chromium")
@@ -222,6 +294,8 @@ class ExclusivePlayer:
             json.dump(payload, fh)
 
     def _spawn_process(self, cmd: list[str]) -> subprocess.Popen:
+        if cmd and "chromium" in os.path.basename(cmd[0]).lower():
+            self._cleanup_chromium_telemetry()
         os.makedirs(os.path.dirname(CHILD_LOG_FILE), exist_ok=True)
         env = self._env()
         launch_cmd = cmd

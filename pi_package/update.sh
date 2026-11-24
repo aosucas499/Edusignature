@@ -94,6 +94,23 @@ EOF
 echo "==> Actualizando código de aplicación, Openbox y dependencias Python..."
 systemctl stop edusignage-scheduler edusignage-player edusignage-x11 edusignage-web 2>/dev/null || true
 
+echo "==> Purgando archivos .pma y Crash Reports acumulados de Chromium..."
+PMA_REMOVED=0
+for ch_dir in "${INSTALL_DIR}/.config/chromium" "${INSTALL_DIR}/data/chromium-profile"; do
+  if [[ -d "$ch_dir" ]]; then
+    CNT=$(find "$ch_dir" -maxdepth 2 -type f -name '*.pma' 2>/dev/null | wc -l)
+    PMA_REMOVED=$((PMA_REMOVED + CNT))
+    find "$ch_dir" -maxdepth 1 -type f -name '*.pma' -delete 2>/dev/null || true
+    if [[ -d "${ch_dir}/BrowserMetrics" ]]; then
+      find "${ch_dir}/BrowserMetrics" -type f -name '*.pma' -delete 2>/dev/null || true
+    fi
+    if [[ -d "${ch_dir}/Crash Reports" ]]; then
+      rm -rf "${ch_dir}/Crash Reports/"* 2>/dev/null || true
+    fi
+  fi
+done
+echo "  - Limpieza de telemetría Chromium completada (${PMA_REMOVED} archivo(s) .pma purgados)."
+
 cp -r "${REPO_DIR}/pi_package/app/"* "${INSTALL_DIR}/app/"
 chmod 0755 "${INSTALL_DIR}/app/start_x11.sh"
 cp "${REPO_DIR}/pi_package/openbox/autostart" /etc/xdg/openbox/edusignage-xinitrc
